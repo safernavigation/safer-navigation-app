@@ -6,7 +6,14 @@ import { PushToTalkButton } from '@/components/ui/push-to-talk-button';
 
 type State = 'idle' | 'recording' | 'submitting' | 'done' | 'error';
 
-export function ReportScreen({ onDone }: { onDone: () => void }) {
+export function ReportScreen({
+  onDone,
+  onReported,
+}: {
+  onDone: () => void;
+  /** Called with the new report's id once the server accepts it. */
+  onReported?: (id: string) => void;
+}) {
   const [state, setState] = useState<State>('idle');
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -67,6 +74,12 @@ export function ReportScreen({ onDone }: { onDone: () => void }) {
       const v = await getVoice();
       await v.speak('Could not submit. Try again.');
       return;
+    }
+    try {
+      const data = await r.json();
+      if (data?.id && typeof data.id === 'string') onReported?.(data.id);
+    } catch {
+      /* response not JSON; non-fatal — own-report skip just won't apply for this one */
     }
     setState('done');
     const v = await getVoice();

@@ -48,6 +48,10 @@ export default function Page() {
   // NavigateScreen reads from inside its poll-loop.
   const promptCountRef = useRef(0);
 
+  // Report IDs filed from this device this session — never re-prompt them.
+  // Spec §7: "Skip own reports entirely."
+  const ownReportIdsRef = useRef<Set<string>>(new Set());
+
   const [pos, setPos] = useState<Coord | null>(null);
   useEffect(() => {
     if (typeof navigator === 'undefined' || !('geolocation' in navigator)) return;
@@ -82,7 +86,12 @@ export default function Page() {
           onReport={() => goto('report')}
         />
       )}
-      {state.screen === 'report' && <ReportScreen onDone={() => goto('home')} />}
+      {state.screen === 'report' && (
+        <ReportScreen
+          onDone={() => goto('home')}
+          onReported={(id) => ownReportIdsRef.current.add(id)}
+        />
+      )}
       {state.screen === 'route' && state.origin && state.destination && (
         <RouteScreen
           origin={state.origin}
@@ -103,6 +112,7 @@ export default function Page() {
             routes={state.routes}
             activeRouteId={state.activeRouteId}
             promptCountRef={promptCountRef}
+            ownReportIdsRef={ownReportIdsRef}
             onArrive={() => goto('arrive')}
             onCancel={() => goto('home')}
             onPromptOpen={(r) => setState((s) => ({ ...s, activePrompt: r }))}

@@ -19,6 +19,7 @@ export function NavigateScreen({
   routes,
   activeRouteId,
   promptCountRef,
+  ownReportIdsRef,
   onArrive,
   onCancel,
   onPromptOpen,
@@ -30,6 +31,7 @@ export function NavigateScreen({
   routes: RouteResponse[];
   activeRouteId: string;
   promptCountRef: MutableRefObject<number>;
+  ownReportIdsRef: MutableRefObject<Set<string>>;
   onArrive: () => void;
   onCancel: () => void;
   onPromptOpen: (report: NearReport) => void;
@@ -54,8 +56,22 @@ export function NavigateScreen({
 
   useEffect(() => {
     if (!('geolocation' in navigator)) return;
+    // Spec §7: ignore positions whose accuracy >50m or whose delta from
+    // the last accepted reading implies >100 m/s (GPS jitter / teleports).
+    let lastAccepted: { lat: number; lng: number; t: number } | null = null;
     const id = navigator.geolocation.watchPosition(
-      (g) => setPos({ lat: g.coords.latitude, lng: g.coords.longitude }),
+      (g) => {
+        if (g.coords.accuracy > 50) return;
+        const next = { lat: g.coords.latitude, lng: g.coords.longitude };
+        const now = Date.now();
+        if (lastAccepted) {
+          const dist = haversine(lastAccepted, next);
+          const dt = (now - lastAccepted.t) / 1000;
+          if (dt > 0 && dist / dt > 100) return;
+        }
+        lastAccepted = { ...next, t: now };
+        setPos(next);
+      },
       () => {},
       { enableHighAccuracy: true, maximumAge: 2000, timeout: 10_000 },
     );
@@ -87,7 +103,8 @@ export function NavigateScreen({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const eligible = (nearbyResp.reports ?? []).filter(
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          (r: any) => !promptedIds.current.has(r.id),
+          (r: any) =>
+            !promptedIds.current.has(r.id) && !ownReportIdsRef.current.has(r.id),
         );
         if (eligible.length > 0) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -129,9 +146,29 @@ export function NavigateScreen({
         }
       }
     };
-    const id = setInterval(tick, POLL_MS);
-    tick();
-    return () => clearInterval(id);
+    // Spec §7: pause poll when tab is hidden (iOS Safari kills setInterval
+    // anyway, but doing it explicitly prevents stale fetches on resume).
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    const start = () => {
+      if (intervalId !== null) return;
+      intervalId = setInterval(tick, POLL_MS);
+      tick();
+    };
+    const stop = () => {
+      if (intervalId === null) return;
+      clearInterval(intervalId);
+      intervalId = null;
+    };
+    const onVisibility = () => {
+      if (document.hidden) stop();
+      else start();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    if (!document.hidden) start();
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, [
     pos,
     destination,
@@ -139,6 +176,7 @@ export function NavigateScreen({
     routes,
     activeRouteId,
     promptCountRef,
+    ownReportIdsRef,
     onArrive,
     onPromptOpen,
     onActiveRouteChange,
