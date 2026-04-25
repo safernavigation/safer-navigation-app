@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { HomeScreen } from '@/components/screens/home';
 import { ReportScreen } from '@/components/screens/report';
 import { RouteScreen } from '@/components/screens/route';
@@ -42,6 +42,11 @@ export default function Page() {
     mode: 'walking',
     activePrompt: null,
   });
+
+  // Counts only when the user actually answers a prompt (yes/no), not on skip.
+  // Lifted here so PromptOverlay's onCounted can increment the cap that
+  // NavigateScreen reads from inside its poll-loop.
+  const promptCountRef = useRef(0);
 
   const [pos, setPos] = useState<Coord | null>(null);
   useEffect(() => {
@@ -97,6 +102,7 @@ export default function Page() {
             mode={state.mode}
             routes={state.routes}
             activeRouteId={state.activeRouteId}
+            promptCountRef={promptCountRef}
             onArrive={() => goto('arrive')}
             onCancel={() => goto('home')}
             onPromptOpen={(r) => setState((s) => ({ ...s, activePrompt: r }))}
@@ -109,7 +115,9 @@ export default function Page() {
               report={state.activePrompt}
               position={state.origin}
               onClose={() => setState((s) => ({ ...s, activePrompt: null }))}
-              onCounted={() => { /* count is tracked inside NavigateScreen on prompt open */ }}
+              onCounted={() => {
+                promptCountRef.current += 1;
+              }}
             />
           )}
         </>
